@@ -52,6 +52,13 @@ export async function identifyBookFromCover(
   onProgress?: (progress: OcrProgress) => void,
 ): Promise<CoverScanResult> {
   const coverImage = await readImageFile(file);
+  return identifyBookFromCoverImage(coverImage, onProgress);
+}
+
+export async function identifyBookFromCoverImage(
+  coverImage: string,
+  onProgress?: (progress: OcrProgress) => void,
+): Promise<CoverScanResult> {
   const rawText = await readTextFromImage(coverImage, onProgress);
   const lines = normalizeLines(rawText);
   const metadata = await searchOpenLibrary(lines);
@@ -72,6 +79,13 @@ export async function identifyBookFromCover(
 
 export async function readPageNumberFromImage(file: File, onProgress?: (progress: OcrProgress) => void) {
   const image = await readImageFile(file);
+  return readPageNumberFromImageSource(image, onProgress);
+}
+
+export async function readPageNumberFromImageSource(
+  image: string,
+  onProgress?: (progress: OcrProgress) => void,
+) {
   const rawText = await readTextFromImage(image, onProgress);
   const page = inferPageNumber(rawText);
 

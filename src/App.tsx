@@ -1,8 +1,10 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   identifyBookFromCover,
+  identifyBookFromCoverImage,
   readPageNumberFromImage,
+  readPageNumberFromImageSource,
   type CoverScanResult,
   type OcrProgress,
 } from './ocr';
@@ -98,32 +100,31 @@ function App() {
       <section className="hero">
         <div>
           <p className="eyebrow">Shelf Notes</p>
-          <h1>Your bookshelf, reading journal, and progress tracker in one quiet place.</h1>
+          <h1>A quiet camera shelf for every book you read.</h1>
           <p className="hero-copy">
-            Snap a book cover to identify the title and author. Snap your last page to log
-            progress, then leave takeaways as naturally as writing in the margin.
+            Point the camera at a cover to add it. Point it at your last page to update progress.
           </p>
         </div>
         <StatsPanel stats={stats} />
       </section>
 
       <section className="workspace-grid">
-        <div className="left-column">
-          <AddBookPanel onAddBook={addBook} />
-          <BookShelf
-            books={books}
-            selectedBookId={selectedBook?.id ?? null}
-            onSelectBook={setSelectedBookId}
-          />
-        </div>
-
-        <ReadingJournal
-          book={selectedBook}
+        <BookShelf
           books={books}
-          onRecordSession={recordSession}
-          onUpdateBook={updateBook}
-          onRemoveBook={removeBook}
+          selectedBookId={selectedBook?.id ?? null}
+          onSelectBook={setSelectedBookId}
         />
+
+        <aside className="journal-column">
+          <AddBookPanel onAddBook={addBook} />
+          <ReadingJournal
+            book={selectedBook}
+            books={books}
+            onRecordSession={recordSession}
+            onUpdateBook={updateBook}
+            onRemoveBook={removeBook}
+          />
+        </aside>
       </section>
     </main>
   );
@@ -166,6 +167,24 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
 
+  async function scanCoverImage(image: string) {
+    setError('');
+    setIsScanning(true);
+    setProgress({ status: 'Reading cover', progress: 0 });
+
+    try {
+      const result: CoverScanResult = await identifyBookFromCoverImage(image, setProgress);
+      setDraft(result.draft);
+      setGenreText(result.draft.genres.join(', '));
+      setRawText(result.rawText);
+      setScanSource(result.matchedSource ?? 'Cover OCR');
+    } catch (scanError) {
+      setError(scanError instanceof Error ? scanError.message : 'Unable to scan this cover.');
+    } finally {
+      setIsScanning(false);
+    }
+  }
+
   async function handleCoverUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -205,12 +224,14 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Add a book</p>
-          <h2>Scan the cover</h2>
+          <h2>Camera scan</h2>
         </div>
-        <label className="photo-button">
-          <input type="file" accept="image/*" capture="environment" onChange={handleCoverUpload} />
-          Snap cover
-        </label>
+        <CameraCapture
+          buttonLabel="Point at cover"
+          title="Point camera at the book cover"
+          helpText="Fill the frame with the front cover, then capture. The title and author stay editable."
+          onCapture={scanCoverImage}
+        />
       </div>
 
       {isScanning && <ProgressNote progress={progress} />}
@@ -259,6 +280,14 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
           Place on shelf
         </button>
       </form>
+
+      <details className="fallback-upload">
+        <summary>No camera? Upload a cover photo</summary>
+        <label className="file-drop">
+          Choose image
+          <input type="file" accept="image/*" onChange={handleCoverUpload} />
+        </label>
+      </details>
 
       {rawText && (
         <details className="ocr-details">
@@ -388,6 +417,22 @@ function PageScanner({
 
   const pagesRead = Math.max(0, page - book.currentPage);
 
+  async function scanPageImage(image: string) {
+    setError('');
+    setIsScanning(true);
+    setProgress({ status: 'Reading page', progress: 0 });
+
+    try {
+      const result = await readPageNumberFromImageSource(image, setProgress);
+      setPage(result.page || book.currentPage);
+      setRawText(result.rawText);
+    } catch (scanError) {
+      setError(scanError instanceof Error ? scanError.message : 'Unable to read this page.');
+    } finally {
+      setIsScanning(false);
+    }
+  }
+
   async function handlePageUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -428,12 +473,15 @@ function PageScanner({
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Session log</p>
-          <h3>Snap your last page</h3>
+          <h3>Point at your last page</h3>
         </div>
-        <label className="photo-button secondary">
-          <input type="file" accept="image/*" capture="environment" onChange={handlePageUpload} />
-          Snap page
-        </label>
+        <CameraCapture
+          buttonLabel="Point at page"
+          title="Point camera at your last page"
+          helpText="Center the page number in the view, then capture. You can correct the page before saving."
+          onCapture={scanPageImage}
+          secondary
+        />
       </div>
 
       {isScanning && <ProgressNote progress={progress} />}
@@ -470,6 +518,14 @@ function PageScanner({
           Save reading session
         </button>
       </form>
+
+      <details className="fallback-upload">
+        <summary>No camera? Upload a page photo</summary>
+        <label className="file-drop">
+          Choose image
+          <input type="file" accept="image/*" onChange={handlePageUpload} />
+        </label>
+      </details>
 
       {rawText && (
         <details className="ocr-details">
@@ -635,6 +691,139 @@ function ProgressNote({ progress }: { progress: OcrProgress | null }) {
       {progress?.status ?? 'Scanning'} {progress ? `${progress.progress}%` : ''}
     </p>
   );
+}
+
+function CameraCapture({
+  buttonLabel,
+  title,
+  helpText,
+  onCapture,
+  secondary = false,
+}: {
+  buttonLabel: string;
+  title: string;
+  helpText: string;
+  onCapture: (image: string) => void | Promise<void>;
+  secondary?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function startCamera() {
+      setCameraError('');
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stopStream(stream);
+          return;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch {
+        setCameraError('Camera access was blocked or is not available on this device.');
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      cancelled = true;
+      if (streamRef.current) {
+        stopStream(streamRef.current);
+        streamRef.current = null;
+      }
+    };
+  }, [isOpen]);
+
+  function closeCamera() {
+    setIsOpen(false);
+  }
+
+  async function captureFrame() {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+      setCameraError('Camera is still warming up. Try again in a moment.');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      setCameraError('Could not capture a photo from this camera.');
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image = canvas.toDataURL('image/jpeg', 0.92);
+    closeCamera();
+    await onCapture(image);
+  }
+
+  return (
+    <>
+      <button
+        className={`photo-button ${secondary ? 'secondary' : ''}`}
+        type="button"
+        onClick={() => setIsOpen(true)}
+      >
+        {buttonLabel}
+      </button>
+
+      {isOpen && (
+        <div className="camera-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+          <div className="camera-modal">
+            <div className="camera-copy">
+              <p className="eyebrow">Camera</p>
+              <h3>{title}</h3>
+              <p>{helpText}</p>
+            </div>
+
+            <div className="viewfinder">
+              <video ref={videoRef} autoPlay muted playsInline />
+              <span className="focus-frame" aria-hidden="true" />
+            </div>
+
+            {cameraError && <p className="error">{cameraError}</p>}
+
+            <div className="camera-actions">
+              <button className="ghost-button" type="button" onClick={closeCamera}>
+                Cancel
+              </button>
+              <button className="photo-button" type="button" onClick={captureFrame}>
+                Capture
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function stopStream(stream: MediaStream) {
+  stream.getTracks().forEach((track) => track.stop());
 }
 
 function splitGenres(value: string) {
