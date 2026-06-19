@@ -270,6 +270,21 @@ textarea {
   gap: 10px;
 }
 
+.success-note,
+.session-prompt {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(111, 131, 107, 0.28);
+  border-radius: 16px;
+  background: rgba(111, 131, 107, 0.12);
+  color: var(--wood-dark);
+}
+
+.success-note strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
 .shelf-panel {
   position: relative;
   min-height: 680px;
@@ -471,9 +486,24 @@ textarea {
   justify-content: flex-start;
 }
 
+.details-editor,
 .genre-editor {
   max-width: 430px;
   margin: 14px 0 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.details-editor summary,
+.manual-entry summary {
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.details-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .rating-editor {
@@ -503,6 +533,11 @@ textarea {
   background: rgba(246, 234, 214, 0.58);
 }
 
+.session-card.prompted {
+  border-color: rgba(111, 131, 107, 0.58);
+  box-shadow: 0 0 0 4px rgba(111, 131, 107, 0.12);
+}
+
 .progress-note {
   margin: 12px 0 0;
   color: var(--sage);
@@ -515,6 +550,7 @@ textarea {
   font-weight: 850;
 }
 
+.manual-entry,
 .fallback-upload,
 .ocr-details {
   margin-top: 12px;
@@ -522,6 +558,7 @@ textarea {
   font-size: 0.88rem;
 }
 
+.manual-entry summary,
 .fallback-upload summary,
 .ocr-details summary {
   cursor: pointer;

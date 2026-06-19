@@ -21,6 +21,7 @@ const emptyDraftBook: DraftBook = {
 function App() {
   const [books, setBooks] = useState<Book[]>(() => loadBooks());
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [sessionPromptBookId, setSessionPromptBookId] = useState<string | null>(null);
   const stats = useMemo(() => calculateStats(books), [books]);
   const selectedBook = books.find((book) => book.id === selectedBookId) ?? books[0] ?? null;
 
@@ -34,7 +35,7 @@ function App() {
     }
   }, [books, selectedBookId]);
 
-  function addBook(draft: DraftBook) {
+  function addBook(draft: DraftBook, options?: { promptForSession?: boolean }) {
     const now = new Date().toISOString();
     const book: Book = {
       id: createId('book'),
@@ -52,6 +53,9 @@ function App() {
 
     setBooks((current) => [book, ...current]);
     setSelectedBookId(book.id);
+    setSessionPromptBookId(options?.promptForSession ? book.id : null);
+
+    return book.id;
   }
 
   function updateBook(bookId: string, updates: Partial<Book>) {
@@ -88,6 +92,7 @@ function App() {
         };
       }),
     );
+    setSessionPromptBookId((current) => (current === draft.bookId ? null : current));
   }
 
   function removeBook(bookId: string) {
@@ -120,6 +125,7 @@ function App() {
           <ReadingJournal
             book={selectedBook}
             books={books}
+            promptForSession={selectedBook ? sessionPromptBookId === selectedBook.id : false}
             onRecordSession={recordSession}
             onUpdateBook={updateBook}
             onRemoveBook={removeBook}
@@ -155,7 +161,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 interface AddBookPanelProps {
-  onAddBook: (draft: DraftBook) => void;
+  onAddBook: (draft: DraftBook, options?: { promptForSession?: boolean }) => string;
 }
 
 function AddBookPanel({ onAddBook }: AddBookPanelProps) {
@@ -163,9 +169,19 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
   const [genreText, setGenreText] = useState('');
   const [rawText, setRawText] = useState('');
   const [scanSource, setScanSource] = useState('');
+  const [lastAddedTitle, setLastAddedTitle] = useState('');
   const [progress, setProgress] = useState<OcrProgress | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
+
+  function addScannedBook(result: CoverScanResult) {
+    onAddBook(result.draft, { promptForSession: true });
+    setDraft(emptyDraftBook);
+    setGenreText('');
+    setRawText(result.rawText);
+    setScanSource(result.matchedSource ?? 'Cover OCR');
+    setLastAddedTitle(result.draft.title || 'Untitled book');
+  }
 
   async function scanCoverImage(image: string) {
     setError('');
@@ -174,10 +190,7 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
 
     try {
       const result: CoverScanResult = await identifyBookFromCoverImage(image, setProgress);
-      setDraft(result.draft);
-      setGenreText(result.draft.genres.join(', '));
-      setRawText(result.rawText);
-      setScanSource(result.matchedSource ?? 'Cover OCR');
+      addScannedBook(result);
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : 'Unable to scan this cover.');
     } finally {
@@ -197,10 +210,7 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
 
     try {
       const result: CoverScanResult = await identifyBookFromCover(file, setProgress);
-      setDraft(result.draft);
-      setGenreText(result.draft.genres.join(', '));
-      setRawText(result.rawText);
-      setScanSource(result.matchedSource ?? 'Cover OCR');
+      addScannedBook(result);
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : 'Unable to scan this cover.');
     } finally {
@@ -216,6 +226,7 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
     setGenreText('');
     setRawText('');
     setScanSource('');
+    setLastAddedTitle('');
     setProgress(null);
   }
 
@@ -236,50 +247,59 @@ function AddBookPanel({ onAddBook }: AddBookPanelProps) {
 
       {isScanning && <ProgressNote progress={progress} />}
       {error && <p className="error">{error}</p>}
-
-      <form className="book-form" onSubmit={handleSubmit}>
-        <label>
-          Title
-          <input
-            value={draft.title}
-            placeholder="The Left Hand of Darkness"
-            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-          />
-        </label>
-        <label>
-          Author
-          <input
-            value={draft.author}
-            placeholder="Ursula K. Le Guin"
-            onChange={(event) => setDraft({ ...draft, author: event.target.value })}
-          />
-        </label>
-        <div className="form-row">
-          <label>
-            Total pages
-            <input
-              type="number"
-              min="0"
-              value={draft.totalPages || ''}
-              placeholder="304"
-              onChange={(event) =>
-                setDraft({ ...draft, totalPages: Number(event.target.value) || 0 })
-              }
-            />
-          </label>
-          <label>
-            Genres
-            <input
-              value={genreText}
-              placeholder="fiction, sci-fi"
-              onChange={(event) => setGenreText(event.target.value)}
-            />
-          </label>
+      {lastAddedTitle && (
+        <div className="success-note">
+          <strong>{lastAddedTitle}</strong> was added to your shelf. Now log the page you are on
+          and your thoughts in the reading session card.
         </div>
-        <button type="submit" disabled={!draft.title.trim()}>
-          Place on shelf
-        </button>
-      </form>
+      )}
+
+      <details className="manual-entry">
+        <summary>Type a book in manually</summary>
+        <form className="book-form" onSubmit={handleSubmit}>
+          <label>
+            Title
+            <input
+              value={draft.title}
+              placeholder="The Left Hand of Darkness"
+              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+            />
+          </label>
+          <label>
+            Author
+            <input
+              value={draft.author}
+              placeholder="Ursula K. Le Guin"
+              onChange={(event) => setDraft({ ...draft, author: event.target.value })}
+            />
+          </label>
+          <div className="form-row">
+            <label>
+              Total pages
+              <input
+                type="number"
+                min="0"
+                value={draft.totalPages || ''}
+                placeholder="304"
+                onChange={(event) =>
+                  setDraft({ ...draft, totalPages: Number(event.target.value) || 0 })
+                }
+              />
+            </label>
+            <label>
+              Genres
+              <input
+                value={genreText}
+                placeholder="fiction, sci-fi"
+                onChange={(event) => setGenreText(event.target.value)}
+              />
+            </label>
+          </div>
+          <button type="submit" disabled={!draft.title.trim()}>
+            Place on shelf
+          </button>
+        </form>
+      </details>
 
       <details className="fallback-upload">
         <summary>No camera? Upload a cover photo</summary>
@@ -348,12 +368,14 @@ function BookShelf({
 function ReadingJournal({
   book,
   books,
+  promptForSession,
   onRecordSession,
   onUpdateBook,
   onRemoveBook,
 }: {
   book: Book | null;
   books: Book[];
+  promptForSession: boolean;
   onRecordSession: (draft: DraftSession) => void;
   onUpdateBook: (bookId: string, updates: Partial<Book>) => void;
   onRemoveBook: (bookId: string) => void;
@@ -377,12 +399,13 @@ function ReadingJournal({
           <h2>{book.title}</h2>
           <p className="muted">by {book.author}</p>
           <ProgressBar book={book} showLabel />
+          <BookDetailsEditor book={book} onUpdateBook={onUpdateBook} />
           <GenreEditor book={book} onUpdateBook={onUpdateBook} />
           <RatingEditor book={book} onUpdateBook={onUpdateBook} />
         </div>
       </div>
 
-      <PageScanner book={book} onRecordSession={onRecordSession} />
+      <PageScanner book={book} promptForSession={promptForSession} onRecordSession={onRecordSession} />
       <ReadingTrend books={books} />
       <SessionList sessions={book.sessions} />
 
@@ -395,9 +418,11 @@ function ReadingJournal({
 
 function PageScanner({
   book,
+  promptForSession,
   onRecordSession,
 }: {
   book: Book;
+  promptForSession: boolean;
   onRecordSession: (draft: DraftSession) => void;
 }) {
   const [page, setPage] = useState(book.currentPage || 0);
@@ -407,6 +432,8 @@ function PageScanner({
   const [progress, setProgress] = useState<OcrProgress | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState('');
+  const cardRef = useRef<HTMLElement | null>(null);
+  const pageInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setPage(book.currentPage || 0);
@@ -414,6 +441,15 @@ function PageScanner({
     setRawText('');
     setError('');
   }, [book.id, book.currentPage]);
+
+  useEffect(() => {
+    if (!promptForSession) {
+      return;
+    }
+
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    pageInputRef.current?.focus();
+  }, [promptForSession, book.id]);
 
   const pagesRead = Math.max(0, page - book.currentPage);
 
@@ -469,11 +505,11 @@ function PageScanner({
   }
 
   return (
-    <section className="session-card">
+    <section className={`session-card ${promptForSession ? 'prompted' : ''}`} ref={cardRef}>
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Session log</p>
-          <h3>Point at your last page</h3>
+          <h3>What page are you on?</h3>
         </div>
         <CameraCapture
           buttonLabel="Point at page"
@@ -486,6 +522,12 @@ function PageScanner({
 
       {isScanning && <ProgressNote progress={progress} />}
       {error && <p className="error">{error}</p>}
+      {promptForSession && (
+        <div className="session-prompt">
+          Your book is on the shelf. Add the last page you reached and what you thought about this
+          reading session.
+        </div>
+      )}
 
       <form className="session-form" onSubmit={handleSubmit}>
         <div className="form-row">
@@ -496,6 +538,7 @@ function PageScanner({
           <label>
             Last page
             <input
+              ref={pageInputRef}
               type="number"
               min="0"
               value={page || ''}
@@ -507,10 +550,10 @@ function PageScanner({
           {pagesRead} pages since your last log. Current page is {book.currentPage}.
         </p>
         <label>
-          Takeaways
+          Thoughts from this session
           <textarea
             value={takeaway}
-            placeholder="What stayed with you from this session?"
+            placeholder="What stood out, surprised you, or is worth remembering?"
             onChange={(event) => setTakeaway(event.target.value)}
           />
         </label>
@@ -627,6 +670,62 @@ function RatingEditor({
         );
       })}
     </div>
+  );
+}
+
+function BookDetailsEditor({
+  book,
+  onUpdateBook,
+}: {
+  book: Book;
+  onUpdateBook: (bookId: string, updates: Partial<Book>) => void;
+}) {
+  const [title, setTitle] = useState(book.title);
+  const [author, setAuthor] = useState(book.author);
+  const [totalPages, setTotalPages] = useState(book.totalPages || 0);
+
+  useEffect(() => {
+    setTitle(book.title);
+    setAuthor(book.author);
+    setTotalPages(book.totalPages || 0);
+  }, [book.id, book.title, book.author, book.totalPages]);
+
+  function saveDetails() {
+    onUpdateBook(book.id, {
+      title: title.trim() || 'Untitled book',
+      author: author.trim() || 'Unknown author',
+      totalPages: Math.max(book.currentPage, Number(totalPages) || 0),
+    });
+  }
+
+  return (
+    <details className="details-editor">
+      <summary>Fix scanned details</summary>
+      <div className="details-grid">
+        <label>
+          Title
+          <input value={title} onBlur={saveDetails} onChange={(event) => setTitle(event.target.value)} />
+        </label>
+        <label>
+          Author
+          <input
+            value={author}
+            onBlur={saveDetails}
+            onChange={(event) => setAuthor(event.target.value)}
+          />
+        </label>
+        <label>
+          Total pages
+          <input
+            type="number"
+            min="0"
+            value={totalPages || ''}
+            onBlur={saveDetails}
+            onChange={(event) => setTotalPages(Number(event.target.value) || 0)}
+          />
+        </label>
+      </div>
+    </details>
   );
 }
 
